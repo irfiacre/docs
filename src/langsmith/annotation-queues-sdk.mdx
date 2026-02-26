@@ -1,0 +1,409 @@
+---
+title: Feedback configs and annotation queue rubrics
+sidebarTitle: Manage feedback & annotation queues programmatically
+---
+
+Programmatically manage feedback configurations and annotation queue rubrics to set up structured human evaluation workflows.
+
+## Overview
+
+LangSmith provides three layers for structured human feedback:
+
+- **Feedback Configs** — Org-wide definitions of feedback keys (e.g. "accuracy" is a continuous 0–1 score). Managed in Settings > Feedbacks in the UI.
+- **Annotation Queue Rubric Items** — Per-queue assignments of which feedback configs annotators should fill out, with queue-specific descriptions and required/optional flags.
+- **Feedback** — Individual scores and values submitted on specific runs by annotators.
+
+## Feedback configs
+
+### Create a feedback config
+
+Feedback configs define the schema for a feedback key — whether it's a continuous score, a categorical choice, or freeform text.
+
+<Note>
+Calling `create_feedback_config` with an identical config that already exists returns the existing config. If a different config already exists for the same key, a 400 error is raised.
+</Note>
+
+<CodeGroup>
+```python Python
+from langsmith import Client
+
+client = Client()
+
+# Continuous score
+client.create_feedback_config(
+    "accuracy",
+    feedback_config={
+        "type": "continuous",
+        "min": 0,
+        "max": 1,
+    },
+    is_lower_score_better=False,
+)
+
+# Categorical
+client.create_feedback_config(
+    "correctness",
+    feedback_config={
+        "type": "categorical",
+        "categories": [
+            {"value": 1, "label": "Pass"},
+            {"value": 0, "label": "Fail"},
+        ],
+    },
+)
+
+# Freeform text
+client.create_feedback_config(
+    "notes",
+    feedback_config={"type": "freeform"},
+)
+```
+```typescript TypeScript
+import { Client } from "langsmith";
+
+const client = new Client();
+
+// Continuous score
+await client.createFeedbackConfig({
+  feedbackKey: "accuracy",
+  feedbackConfig: { type: "continuous", min: 0, max: 1 },
+  isLowerScoreBetter: false,
+});
+
+// Categorical
+await client.createFeedbackConfig({
+  feedbackKey: "correctness",
+  feedbackConfig: {
+    type: "categorical",
+    categories: [
+      { value: 1, label: "Pass" },
+      { value: 0, label: "Fail" },
+    ],
+  },
+});
+
+// Freeform text
+await client.createFeedbackConfig({
+  feedbackKey: "notes",
+  feedbackConfig: { type: "freeform" },
+});
+```
+</CodeGroup>
+
+### List feedback configs
+
+<CodeGroup>
+```python Python
+# List all configs
+for config in client.list_feedback_configs():
+    print(f"{config.feedback_key}: {config.feedback_config}")
+
+# Filter by specific keys
+for config in client.list_feedback_configs(
+    feedback_key=["accuracy", "correctness"]
+):
+    print(config.feedback_key)
+```
+```typescript TypeScript
+// List all configs
+for await (const config of client.listFeedbackConfigs()) {
+  console.log(`${config.feedback_key}: ${JSON.stringify(config.feedback_config)}`);
+}
+
+// Filter by specific keys
+for await (const config of client.listFeedbackConfigs({
+  feedbackKeys: ["accuracy", "correctness"],
+})) {
+  console.log(config.feedback_key);
+}
+```
+</CodeGroup>
+
+### Update a feedback config
+
+Only the provided fields are updated.
+
+<CodeGroup>
+```python Python
+client.update_feedback_config(
+    "accuracy",
+    is_lower_score_better=True,
+)
+```
+```typescript TypeScript
+await client.updateFeedbackConfig("accuracy", {
+  isLowerScoreBetter: true,
+});
+```
+</CodeGroup>
+
+### Delete a feedback config
+
+Performs a soft delete. The key can be recreated later.
+
+<CodeGroup>
+```python Python
+client.delete_feedback_config("accuracy")
+```
+```typescript TypeScript
+await client.deleteFeedbackConfig("accuracy");
+```
+</CodeGroup>
+
+## Annotation queue rubric items
+
+Rubric items assign feedback configs to a specific annotation queue. They control which feedback forms annotators see when reviewing runs in that queue, and whether each form is required or optional.
+
+### Create a queue with rubric items
+
+<CodeGroup>
+```python Python
+queue = client.create_annotation_queue(
+    name="QA Review Queue",
+    description="Review LLM outputs for accuracy and correctness",
+    rubric_instructions="Score each response. Add notes for anything unusual.",
+    rubric_items=[
+        {
+            "feedback_key": "accuracy",
+            "description": "How accurate is the response?",
+            "score_descriptions": {
+                "0": "Completely wrong",
+                "1": "Perfectly accurate",
+            },
+            "is_required": True,
+        },
+        {
+            "feedback_key": "correctness",
+            "description": "Did the response pass or fail?",
+            "value_descriptions": {
+                "Pass": "Factually correct",
+                "Fail": "Contains errors",
+            },
+            "is_required": True,
+        },
+        {
+            "feedback_key": "notes",
+            "description": "Any additional observations",
+            "is_required": False,
+        },
+    ],
+)
+```
+```typescript TypeScript
+const queue = await client.createAnnotationQueue({
+  name: "QA Review Queue",
+  description: "Review LLM outputs for accuracy and correctness",
+  rubricInstructions: "Score each response. Add notes for anything unusual.",
+  rubricItems: [
+    {
+      feedback_key: "accuracy",
+      description: "How accurate is the response?",
+      score_descriptions: { "0": "Completely wrong", "1": "Perfectly accurate" },
+      is_required: true,
+    },
+    {
+      feedback_key: "correctness",
+      description: "Did the response pass or fail?",
+      value_descriptions: { Pass: "Factually correct", Fail: "Contains errors" },
+      is_required: true,
+    },
+    {
+      feedback_key: "notes",
+      description: "Any additional observations",
+      is_required: false,
+    },
+  ],
+});
+```
+</CodeGroup>
+
+### Update rubric items on an existing queue
+
+<Note>
+Updating rubric items replaces the full list. Include all items you want to keep.
+</Note>
+
+<CodeGroup>
+```python Python
+client.update_annotation_queue(
+    queue.id,
+    rubric_items=[
+        {"feedback_key": "accuracy", "is_required": True},
+        {"feedback_key": "correctness", "is_required": True},
+        {
+            "feedback_key": "tone",
+            "description": "Is the tone appropriate?",
+            "is_required": False,
+        },
+    ],
+)
+```
+```typescript TypeScript
+await client.updateAnnotationQueue(queue.id, {
+  rubricItems: [
+    { feedback_key: "accuracy", is_required: true },
+    { feedback_key: "correctness", is_required: true },
+    { feedback_key: "tone", description: "Is the tone appropriate?", is_required: false },
+  ],
+});
+```
+</CodeGroup>
+
+## Feedback config types (detailed)
+
+### Continuous
+
+A numeric score within a range. Optionally add labeled points on the scale.
+
+<CodeGroup>
+```python Python
+# Simple continuous score
+client.create_feedback_config(
+    "accuracy",
+    feedback_config={
+        "type": "continuous",
+        "min": 0,
+        "max": 1,
+    },
+)
+
+# Continuous with labeled points on the scale
+client.create_feedback_config(
+    "quality",
+    feedback_config={
+        "type": "continuous",
+        "min": 1,
+        "max": 5,
+        "categories": [
+            {"value": 1, "label": "Poor"},
+            {"value": 3, "label": "Average"},
+            {"value": 5, "label": "Excellent"},
+        ],
+    },
+)
+```
+```typescript TypeScript
+await client.createFeedbackConfig({
+  feedbackKey: "accuracy",
+  feedbackConfig: { type: "continuous", min: 0, max: 1 },
+});
+
+await client.createFeedbackConfig({
+  feedbackKey: "quality",
+  feedbackConfig: {
+    type: "continuous",
+    min: 1,
+    max: 5,
+    categories: [
+      { value: 1, label: "Poor" },
+      { value: 3, label: "Average" },
+      { value: 5, label: "Excellent" },
+    ],
+  },
+});
+```
+</CodeGroup>
+
+### Categorical
+
+A selection from predefined options. Requires at least 2 categories. Do not set min/max.
+
+<CodeGroup>
+```python Python
+# Binary pass/fail
+client.create_feedback_config(
+    "correctness",
+    feedback_config={
+        "type": "categorical",
+        "categories": [
+            {"value": 1, "label": "Pass"},
+            {"value": 0, "label": "Fail"},
+        ],
+    },
+)
+
+# Multi-class
+client.create_feedback_config(
+    "sentiment",
+    feedback_config={
+        "type": "categorical",
+        "categories": [
+            {"value": 0, "label": "Negative"},
+            {"value": 1, "label": "Neutral"},
+            {"value": 2, "label": "Positive"},
+        ],
+    },
+)
+```
+```typescript TypeScript
+await client.createFeedbackConfig({
+  feedbackKey: "correctness",
+  feedbackConfig: {
+    type: "categorical",
+    categories: [
+      { value: 1, label: "Pass" },
+      { value: 0, label: "Fail" },
+    ],
+  },
+});
+
+await client.createFeedbackConfig({
+  feedbackKey: "sentiment",
+  feedbackConfig: {
+    type: "categorical",
+    categories: [
+      { value: 0, label: "Negative" },
+      { value: 1, label: "Neutral" },
+      { value: 2, label: "Positive" },
+    ],
+  },
+});
+```
+</CodeGroup>
+
+### Freeform
+
+Free-text input. Do not set min, max, or categories.
+
+<CodeGroup>
+```python Python
+client.create_feedback_config(
+    "notes",
+    feedback_config={"type": "freeform"},
+)
+```
+```typescript TypeScript
+await client.createFeedbackConfig({
+  feedbackKey: "notes",
+  feedbackConfig: { type: "freeform" },
+});
+```
+</CodeGroup>
+
+## Validation rules
+
+| Type | min/max | categories | Constraints |
+|------|---------|-----------|-------------|
+| continuous | Optional | Optional (labeled scale points) | min < max; category values within [min, max] |
+| categorical | Must not be set | Required, min 2 | Unique values and labels |
+| freeform | Must not be set | Must not be set | — |
+
+## Reference
+
+### Feedback config types
+
+| Type | Fields | Description |
+|------|--------|-------------|
+| continuous | min, max | Numeric score within a range |
+| categorical | categories (list of {value, label}) | Selection from predefined options |
+| freeform | — | Free-text input |
+
+### Rubric item fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| feedback_key | string | Required. Must match an existing feedback config key. |
+| description | string | Displayed to annotators as guidance for this item. |
+| score_descriptions | Record\<string, string\> | Labels for specific score values (continuous). |
+| value_descriptions | Record\<string, string\> | Labels for specific category values (categorical). |
+| is_required | boolean | Whether annotators must complete this item before submitting. Defaults to false. |
